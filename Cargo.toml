@@ -6,6 +6,7 @@ description = "Generate W3C-compliant DID Documents from did:nostr identifiers"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/sirraya-labs/nostr-did"
 readme = "README.md"
+authors = ["Amir Hameed Mir <amir@sirraya.org>"]
 keywords = ["nostr", "did", "document", "ssi", "w3c"]
 categories = ["cryptography", "web-programming"]
 
