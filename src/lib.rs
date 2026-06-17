@@ -20,4 +20,7 @@
 
 pub mod document;
 
+// Re-export nostr-did-key for convenience
+pub use nostr_did_key as key;
+
 pub use document::{DidDocument, DocumentBuilder, Profile, Service, VerificationMethod};
