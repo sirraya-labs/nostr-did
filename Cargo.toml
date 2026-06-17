@@ -1,0 +1,15 @@
+[package]
+name = "nostr-did"
+version = "0.1.0"
+edition = "2021"
+description = "Generate W3C-compliant DID Documents from did:nostr identifiers"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/sirraya-labs/nostr-did"
+readme = "README.md"
+keywords = ["nostr", "did", "document", "ssi", "w3c"]
+categories = ["cryptography", "web-programming"]
+
+[dependencies]
+nostr-did-key = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
