@@ -32,7 +32,7 @@ Zero network — generated deterministically from the public key alone.
 ```json
 {
   "@context": [
-    "https://www.w3.org/ns/did/v1",
+    "https://www.w3.org/ns/cid/v1",
     "https://w3id.org/nostr/context"
   ],
   "id": "did:nostr:124c0fa99407182ece5a24fad9b7f6674902fc422843d3128d38a0afbee0fdd2",
@@ -93,7 +93,7 @@ let doc = DocumentBuilder::new()
 ```json
 {
   "@context": [
-    "https://www.w3.org/ns/did/v1",
+    "https://www.w3.org/ns/cid/v1",
     "https://w3id.org/nostr/context"
   ],
   "id": "did:nostr:124c0fa99407182ece5a24fad9b7f6674902fc422843d3128d38a0afbee0fdd2",
@@ -188,3 +188,5 @@ Dual-licensed under either of:
 - MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
 at your option.
+```
+
