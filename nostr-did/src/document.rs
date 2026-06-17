@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 /// ```json
 /// {
 ///   "@context": [
-///     "https://www.w3.org/ns/did/v1",
+///     "https://www.w3.org/ns/cid/v1",
 ///     "https://w3id.org/nostr/context"
 ///   ],
 ///   "id": "did:nostr:124c0fa99407182ece5a24fad9b7f6674902fc422843d3128d38a0afbee0fdd2",
@@ -43,7 +43,11 @@ use serde::{Deserialize, Serialize};
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DidDocument {
-    /// JSON-LD contexts for DID Core and Nostr.
+    /// JSON-LD contexts for CID and Nostr.
+    ///
+    /// The first entry is `https://www.w3.org/ns/cid/v1` (Controlled Identifiers)
+    /// because `Multikey` and `publicKeyMultibase` are CID-defined terms,
+    /// not DID Core terms. Per spec §2.1 and §2.5.
     #[serde(rename = "@context")]
     pub context: Vec<String>,
 
@@ -201,6 +205,13 @@ const DEFAULT_RELAYS: &[&str] = &[
 /// Uses `nostr-did-key` for BIP-340 → Multikey cryptographic transformation
 /// and produces documents matching the Nostr DID Method Specification v0.0.11.
 ///
+/// # Relay deduplication
+///
+/// Relay URLs are normalized (trim trailing slash, lowercase) before
+/// comparison. Duplicate URLs are silently ignored. This means calling
+/// `with_relay("wss://relay.damus.io")` followed by
+/// `with_relay("wss://relay.damus.io/")` adds the relay only once.
+///
 /// # Example — Minimal document (§2.3.1)
 ///
 /// ```rust
@@ -243,10 +254,16 @@ const DEFAULT_RELAYS: &[&str] = &[
 ///     .unwrap();
 /// ```
 pub struct DocumentBuilder {
+    /// Collected relay URLs (normalized: no trailing slash, lowercase).
     relay_urls: Vec<String>,
+    /// Profile metadata.
     profile: Option<Profile>,
+    /// Cross-platform identity links.
     also_known_as: Vec<String>,
+    /// Followed DIDs.
     follows: Vec<String>,
+    /// Set of normalized relay URLs already seen — used for O(1) dedup.
+    seen_relays: std::collections::HashSet<String>,
 }
 
 impl Default for DocumentBuilder {
@@ -256,7 +273,7 @@ impl Default for DocumentBuilder {
 }
 
 impl DocumentBuilder {
-    /// Create a new builder with default high-availability relay URLs.
+    /// Create a new builder pre-seeded with high-availability default relays.
     ///
     /// Default relays:
     /// - `wss://nos.lol`
@@ -264,26 +281,56 @@ impl DocumentBuilder {
     /// - `wss://relay.primal.net`
     /// - `wss://relay.nostr.band`
     /// - `wss://purplepag.es`
+    ///
+    /// These defaults are deduplicated against any relays added later
+    /// via [`with_relay`] or [`with_relays`].
     pub fn new() -> Self {
+        let mut seen_relays = std::collections::HashSet::new();
+        let mut relay_urls = Vec::with_capacity(DEFAULT_RELAYS.len());
+
+        for relay in DEFAULT_RELAYS {
+            let normalized = relay.trim_end_matches('/').to_lowercase();
+            if seen_relays.insert(normalized.clone()) {
+                relay_urls.push(normalized);
+            }
+        }
+
         Self {
-            relay_urls: DEFAULT_RELAYS.iter().map(|s| s.to_string()).collect(),
+            relay_urls,
             profile: None,
             also_known_as: Vec::new(),
             follows: Vec::new(),
+            seen_relays,
         }
     }
 
-    /// Add a relay URL for service endpoint injection.
+    /// Add a relay URL. Duplicates are silently ignored.
     ///
-    /// Relay URLs should be WebSocket endpoints (e.g., `wss://relay.damus.io`).
+    /// URLs are normalized (trim trailing slash, lowercase) before
+    /// comparison and storage. This means `"wss://relay.damus.io"`,
+    /// `"wss://relay.damus.io/"`, and `"WSS://RELAY.DAMUS.IO"`
+    /// are all treated as the same relay.
+    ///
+    /// The trailing `/` is re-appended during document construction
+    /// per the did:nostr specification.
     pub fn with_relay(mut self, relay: impl Into<String>) -> Self {
-        self.relay_urls.push(relay.into());
+        let normalized = relay.into().trim_end_matches('/').to_lowercase();
+        if self.seen_relays.insert(normalized.clone()) {
+            self.relay_urls.push(normalized);
+        }
         self
     }
 
-    /// Replace all default relays with a custom set.
+    /// Replace all relays (including defaults) with a custom set.
+    ///
+    /// Each URL in the provided list is normalized and deduplicated.
+    /// To add relays on top of defaults, use [`with_relay`] instead.
     pub fn with_relays(mut self, relays: Vec<String>) -> Self {
-        self.relay_urls = relays;
+        self.relay_urls.clear();
+        self.seen_relays.clear();
+        for relay in relays {
+            self = self.with_relay(relay);
+        }
         self
     }
 
@@ -331,8 +378,9 @@ impl DocumentBuilder {
         let multikey = public_key_to_multikey(pubkey_hex).ok()?;
         let key_id = format!("{did}#key1");
 
-        // Build service endpoints from relay URLs
-        let mut services = Vec::new();
+        // Build service endpoints from relay URLs.
+        // Trailing `/` is re-appended per the did:nostr specification §2.6.
+        let mut services = Vec::with_capacity(self.relay_urls.len());
         for (i, relay) in self.relay_urls.iter().enumerate() {
             let relay_id = if self.relay_urls.len() == 1 {
                 format!("{did}#relay")
@@ -348,7 +396,7 @@ impl DocumentBuilder {
 
         Some(DidDocument {
             context: vec![
-                "https://www.w3.org/ns/did/v1".to_string(),
+                "https://www.w3.org/ns/cid/v1".to_string(),
                 "https://w3id.org/nostr/context".to_string(),
             ],
             id: did.to_string(),
@@ -472,6 +520,56 @@ mod tests {
         }
     }
 
+    // ── Relay deduplication ──
+
+    #[test]
+    fn duplicate_relay_same_url_ignored() {
+        let doc = DocumentBuilder::new()
+            .with_relay("wss://relay.damus.io")
+            .with_relay("wss://relay.damus.io")
+            .with_relay("wss://relay.damus.io")
+            .build(SPEC_DID)
+            .unwrap();
+
+        let damus_count = doc
+            .service
+            .iter()
+            .filter(|s| {
+                matches!(&s.service_endpoint, ServiceEndpoint::Single(url) if url.contains("relay.damus.io"))
+            })
+            .count();
+        assert_eq!(damus_count, 1);
+    }
+
+    #[test]
+    fn duplicate_relay_trailing_slash_ignored() {
+        let doc = DocumentBuilder::new()
+            .with_relay("wss://relay.damus.io")
+            .with_relay("wss://relay.damus.io/")
+            .with_relay("WSS://RELAY.DAMUS.IO")
+            .build(SPEC_DID)
+            .unwrap();
+
+        let damus_count = doc
+            .service
+            .iter()
+            .filter(|s| {
+                matches!(&s.service_endpoint, ServiceEndpoint::Single(url) if url.contains("relay.damus.io"))
+            })
+            .count();
+        assert_eq!(damus_count, 1);
+    }
+
+    #[test]
+    fn duplicate_relay_via_defaults_and_explicit_add() {
+        let doc = DocumentBuilder::new()
+            .with_relay("wss://relay.damus.io") // already in defaults
+            .build(SPEC_DID)
+            .unwrap();
+
+        assert_eq!(doc.service.len(), DEFAULT_RELAYS.len());
+    }
+
     // ── §2.3.3 Complete document ──
 
     #[test]
@@ -531,7 +629,7 @@ mod tests {
         let doc = DocumentBuilder::new().build(SPEC_DID).unwrap();
         assert!(doc
             .context
-            .contains(&"https://www.w3.org/ns/did/v1".to_string()));
+            .contains(&"https://www.w3.org/ns/cid/v1".to_string()));
         assert!(doc
             .context
             .contains(&"https://w3id.org/nostr/context".to_string()));
