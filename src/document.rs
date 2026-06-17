@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 /// ```json
 /// {
 ///   "@context": [
-///     "https://www.w3.org/ns/did/v1",
+///     "https://www.w3.org/ns/cid/v1",
 ///     "https://w3id.org/nostr/context"
 ///   ],
 ///   "id": "did:nostr:124c0fa99407182ece5a24fad9b7f6674902fc422843d3128d38a0afbee0fdd2",
@@ -348,7 +348,7 @@ impl DocumentBuilder {
 
         Some(DidDocument {
             context: vec![
-                "https://www.w3.org/ns/did/v1".to_string(),
+                "https://www.w3.org/ns/cid/v1".to_string(),
                 "https://w3id.org/nostr/context".to_string(),
             ],
             id: did.to_string(),
@@ -531,7 +531,7 @@ mod tests {
         let doc = DocumentBuilder::new().build(SPEC_DID).unwrap();
         assert!(doc
             .context
-            .contains(&"https://www.w3.org/ns/did/v1".to_string()));
+            .contains(&"https://www.w3.org/ns/cid/v1".to_string()));
         assert!(doc
             .context
             .contains(&"https://w3id.org/nostr/context".to_string()));
