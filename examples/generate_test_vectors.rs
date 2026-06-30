@@ -289,16 +289,16 @@ fn generate_did_document_vectors() -> Vec<DidDocumentVector> {
     let minimal_doc = DocumentBuilder::new().build(did).unwrap();
     let minimal_json = serde_json::to_value(&minimal_doc).unwrap();
 
-    // Enhanced document (section 2.3.2) -- with relays, modified from kind-10002 created_at
+    // Enhanced document (section 2.3.2) -- modified computed from kind-10002 created_at
     let enhanced_doc = DocumentBuilder::new()
         .with_relay("wss://relay.damus.io")
         .with_relay("wss://nos.lol")
-        .with_modified("2025-01-26T15:30:00Z")
+        .with_relay_created_at(1737906600)
         .build(did)
         .unwrap();
     let enhanced_json = serde_json::to_value(&enhanced_doc).unwrap();
 
-    // Complete document (section 2.3.3)
+    // Complete document (section 2.3.3) -- modified computed from max(profile.created_at, relay.created_at)
     let profile = Profile {
         name: Some("Alice".to_string()),
         about: Some("Building the decentralized web".to_string()),
@@ -321,7 +321,7 @@ fn generate_did_document_vectors() -> Vec<DidDocumentVector> {
             "did:nostr:32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245".to_string(),
             "did:nostr:46fcbe3065eaf1ae7811465924e48923363ff3f526bd6f73d7c184147700e3a8".to_string(),
         ])
-        .with_modified("2025-01-26T15:30:00Z")
+        .with_relay_created_at(1737906600)
         .build(did)
         .unwrap();
     let complete_json = serde_json::to_value(&complete_doc).unwrap();
