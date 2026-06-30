@@ -116,7 +116,7 @@ fn generate_key_transform_vectors() -> Vec<KeyTransformVector> {
         },
         KeyTransformVector {
             name: "all_zeros".to_string(),
-            description: "All-zero public key (x=0 is a valid secp256k1 x-coordinate -- treated as opaque hex in default mode)".to_string(),
+            description: "All-zero public key (x=0 is a valid field element but not a point on the curve -- treated as opaque hex in default mode, rejected with crypto-validation)".to_string(),
             input: "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
             output: key::public_key_to_multikey(
                 "0000000000000000000000000000000000000000000000000000000000000000",
@@ -233,6 +233,12 @@ fn generate_error_vectors() -> Vec<ErrorVector> {
             name: "error_x_not_field_element".to_string(),
             description: "x-coordinate >= field prime p -- rejected by crypto-validation".to_string(),
             input: "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc30".to_string(),
+            error: "InvalidPublicKey".to_string(),
+        },
+        ErrorVector {
+            name: "error_x_not_on_curve".to_string(),
+            description: "x-coordinate < p but not a point on the curve (x=0) -- rejected by crypto-validation".to_string(),
+            input: "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
             error: "InvalidPublicKey".to_string(),
         },
         ErrorVector {
