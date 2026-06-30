@@ -1,6 +1,6 @@
 [package]
 name = "nostr-did"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 description = "Generate W3C-compliant DID Documents from did:nostr identifiers"
 license = "MIT OR Apache-2.0"
