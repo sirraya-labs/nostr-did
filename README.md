@@ -1,4 +1,3 @@
-
 # nostr-did
 
 [![crates.io](https://img.shields.io/crates/v/nostr-did.svg)](https://crates.io/crates/nostr-did)
@@ -9,7 +8,10 @@ Generate W3C-compliant DID Documents from `did:nostr` identifiers.
 
 Uses [`nostr-did-key`](https://crates.io/crates/nostr-did-key) for BIP-340 → Multikey
 cryptographic transformation and produces fully spec-compliant documents matching
-the [Nostr DID Method Specification v0.0.11](https://nostrcg.github.io/did-nostr/).
+the [Nostr DID Method Specification v0.0.12](https://nostrcg.github.io/did-nostr/).
+
+Maintains the official [conformance test vectors](https://github.com/nostrcg/did-nostr)
+for the specification — any implementation can validate correctness against this crate's output.
 
 ## Quick Start
 
@@ -28,6 +30,7 @@ println!("{}", serde_json::to_string_pretty(&doc).unwrap());
 ### §2.3.1 Minimal DID Document (Offline)
 
 Zero network — generated deterministically from the public key alone.
+No services, no profile, no signed parts.
 
 ```json
 {
@@ -45,21 +48,15 @@ Zero network — generated deterministically from the public key alone.
       "publicKeyMultibase": "fe70102124c0fa99407182ece5a24fad9b7f6674902fc422843d3128d38a0afbee0fdd2"
     }
   ],
-  "authentication": ["did:nostr:124c0fa99407182ece5a24fad9b7f6674902fc422843d3128d38a0afbee0fdd2#key1"],
-  "assertionMethod": ["did:nostr:124c0fa99407182ece5a24fad9b7f6674902fc422843d3128d38a0afbee0fdd2#key1"],
-  "service": [
-    { "id": "...", "type": "Relay", "serviceEndpoint": "wss://nos.lol/" },
-    { "id": "...", "type": "Relay", "serviceEndpoint": "wss://relay.damus.io/" },
-    { "id": "...", "type": "Relay", "serviceEndpoint": "wss://relay.primal.net/" },
-    { "id": "...", "type": "Relay", "serviceEndpoint": "wss://relay.nostr.band/" },
-    { "id": "...", "type": "Relay", "serviceEndpoint": "wss://purplepag.es/" }
-  ]
+  "authentication": ["#key1"],
+  "assertionMethod": ["#key1"]
 }
 ```
 
 ### §2.3.3 Complete DID Document (Profile + Social Graph)
 
 Enriched with Nostr kind 0 profile, kind 3 follows, and alsoKnownAs cross-platform links.
+`modified` is computed from `max(created_at)` of all signed parts.
 
 ```rust
 use nostr_did::{DocumentBuilder, Profile};
@@ -71,11 +68,11 @@ let profile = Profile {
     nip05: Some("alice@example.com".into()),
     lud16: Some("alice@getalby.com".into()),
     website: Some("https://alice.example.com".into()),
-    timestamp: Some(1737906600),
+    created_at: Some(1737906600),
 };
 
 let doc = DocumentBuilder::new()
-    .with_relays(vec!["wss://relay.damus.io".to_string()])
+    .with_relay("wss://relay.damus.io")
     .with_profile(profile)
     .with_also_known_as(vec![
         "https://alice.example.com/#me".into(),
@@ -86,6 +83,7 @@ let doc = DocumentBuilder::new()
         "did:nostr:32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245".into(),
         "did:nostr:46fcbe3065eaf1ae7811465924e48923363ff3f526bd6f73d7c184147700e3a8".into(),
     ])
+    .with_relay_created_at(1737906600)
     .build("did:nostr:124c0fa99407182ece5a24fad9b7f6674902fc422843d3128d38a0afbee0fdd2")
     .unwrap();
 ```
@@ -111,10 +109,14 @@ let doc = DocumentBuilder::new()
       "publicKeyMultibase": "fe70102124c0fa99407182ece5a24fad9b7f6674902fc422843d3128d38a0afbee0fdd2"
     }
   ],
-  "authentication": ["did:nostr:124c0fa99407182ece5a24fad9b7f6674902fc422843d3128d38a0afbee0fdd2#key1"],
-  "assertionMethod": ["did:nostr:124c0fa99407182ece5a24fad9b7f6674902fc422843d3128d38a0afbee0fdd2#key1"],
+  "authentication": ["#key1"],
+  "assertionMethod": ["#key1"],
   "service": [
-    { "type": "Relay", "serviceEndpoint": "wss://relay.damus.io/" }
+    {
+      "id": "did:nostr:124c0fa99407182ece5a24fad9b7f6674902fc422843d3128d38a0afbee0fdd2#relay1",
+      "type": "Relay",
+      "serviceEndpoint": "wss://relay.damus.io/"
+    }
   ],
   "profile": {
     "name": "Alice",
@@ -123,12 +125,13 @@ let doc = DocumentBuilder::new()
     "nip05": "alice@example.com",
     "lud16": "alice@getalby.com",
     "website": "https://alice.example.com",
-    "timestamp": 1737906600
+    "created_at": 1737906600
   },
   "follows": [
     "did:nostr:32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245",
     "did:nostr:46fcbe3065eaf1ae7811465924e48923363ff3f526bd6f73d7c184147700e3a8"
-  ]
+  ],
+  "modified": "2025-01-26T15:50:00Z"
 }
 ```
 
@@ -141,17 +144,25 @@ nostr-did = "0.1"
 
 ## API Reference
 
-### `DocumentBuilder`
+### Constructors
 
 | Method | Description |
 |---|---|
-| `new()` | Create a builder with 5 default high-availability relays |
+| `DocumentBuilder::new()` | Empty builder — produces minimal §2.3.1 documents |
+| `DocumentBuilder::with_defaults()` | Pre-seeded with 5 high-availability relays |
+
+### Builder Methods
+
+| Method | Description |
+|---|---|
 | `build(did)` | Generate the DID Document |
-| `with_relay(url)` | Add a single relay URL |
-| `with_relays(vec)` | Replace all default relays |
+| `with_relay(url)` | Add a single relay URL (deduplicated) |
+| `with_relays(vec)` | Replace all relays with a custom set |
 | `with_profile(profile)` | Set Nostr kind 0 profile metadata |
 | `with_also_known_as(vec)` | Set cross-platform identity links |
 | `with_follows(vec)` | Set followed DIDs (kind 3 contacts) |
+| `with_relay_created_at(ts)` | Set relay event timestamp for `modified` computation |
+| `with_modified(iso8601)` | Explicit modified override (ISO-8601) |
 
 ### Types
 
@@ -162,9 +173,26 @@ nostr-did = "0.1"
 | `Service` | Relay or FollowsEndpoint service entry |
 | `Profile` | Nostr kind 0 profile metadata |
 
-## Default Relays
+## Design Decisions
 
-The builder includes 5 high-availability production relays:
+- **Verification method `id` and `controller`** are absolute (`did:nostr:<pubkey>#key1`)
+- **`authentication` and `assertionMethod` references** are relative (`"#key1"`) — matches DID authoring conventions
+- **`modified`** is computed from `max(created_at)` of all signed parts, not hardcoded
+- **Relay IDs** are always indexed (`#relay1`, `#relay2`, ...) regardless of count
+- **Parity**: canonical Multikey is even-parity `0x02`; decoders accept `0x03` for interop
+
+## Conformance Suite
+
+This crate generates the official test vectors for the did:nostr specification.
+21 vectors covering key transformation, decoding, error cases, and all three
+DID Document forms. Vectors are language-agnostic JSON — any implementation
+can validate correctness by matching the output.
+
+```bash
+cargo run --example generate_test_vectors
+```
+
+## Default Relays (`with_defaults()`)
 
 | Relay | Purpose |
 |---|---|
@@ -187,6 +215,5 @@ Dual-licensed under either of:
 - Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
 - MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
-at your option.
-```
+
 
