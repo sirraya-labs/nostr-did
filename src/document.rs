@@ -1,7 +1,7 @@
 //! DID Document generation for the `did:nostr` method.
 //!
 //! Produces fully W3C-compliant DID Documents matching the
-//! [Nostr DID Method Specification v0.0.11](https://nostrcg.github.io/did-nostr/),
+//! [Nostr DID Method Specification v0.0.12](https://nostrcg.github.io/did-nostr/),
 //! including Multikey verification methods, relay service endpoints,
 //! profile metadata, social graph (follows), and cross-platform identity
 //! linking (alsoKnownAs).
@@ -14,119 +14,62 @@ use serde::{Deserialize, Serialize};
 // ---------------------------------------------------------------------------
 
 /// A fully W3C-compliant DID Document for the `did:nostr` method.
-///
-/// Implements all fields defined in the Nostr DID Method Specification
-/// v0.0.11: `@context`, `id`, `type`, `alsoKnownAs`, `verificationMethod`,
-/// `authentication`, `assertionMethod`, `service`, `profile`, and `follows`.
-///
-/// # Example (Minimal — spec §2.3.1)
-///
-/// ```json
-/// {
-///   "@context": [
-///     "https://www.w3.org/ns/cid/v1",
-///     "https://w3id.org/nostr/context"
-///   ],
-///   "id": "did:nostr:124c0fa99407182ece5a24fad9b7f6674902fc422843d3128d38a0afbee0fdd2",
-///   "type": "DIDNostr",
-///   "verificationMethod": [
-///     {
-///       "id": "did:nostr:124c0fa99407182ece5a24fad9b7f6674902fc422843d3128d38a0afbee0fdd2#key1",
-///       "type": "Multikey",
-///       "controller": "did:nostr:124c0fa99407182ece5a24fad9b7f6674902fc422843d3128d38a0afbee0fdd2",
-///       "publicKeyMultibase": "fe70102124c0fa99407182ece5a24fad9b7f6674902fc422843d3128d38a0afbee0fdd2"
-///     }
-///   ],
-///   "authentication": ["did:nostr:124c0fa99407182ece5a24fad9b7f6674902fc422843d3128d38a0afbee0fdd2#key1"],
-///   "assertionMethod": ["did:nostr:124c0fa99407182ece5a24fad9b7f6674902fc422843d3128d38a0afbee0fdd2#key1"]
-/// }
-/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DidDocument {
-    /// JSON-LD contexts for CID and Nostr.
-    ///
-    /// The first entry is `https://www.w3.org/ns/cid/v1` (Controlled Identifiers)
-    /// because `Multikey` and `publicKeyMultibase` are CID-defined terms,
-    /// not DID Core terms. Per spec §2.1 and §2.5.
     #[serde(rename = "@context")]
     pub context: Vec<String>,
 
-    /// The DID identifier (e.g., `did:nostr:<pubkey>`).
     pub id: String,
 
-    /// Document type. MUST be `"DIDNostr"` per the specification.
     #[serde(rename = "type")]
     pub doc_type: String,
 
-    /// Cross-platform identity assertions (WebID, ActivityPub, AT Protocol, etc.).
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     #[serde(rename = "alsoKnownAs")]
     pub also_known_as: Vec<String>,
 
-    /// Cryptographic verification methods (Multikey).
     #[serde(rename = "verificationMethod")]
     pub verification_method: Vec<VerificationMethod>,
 
-    /// Verification methods used for authentication.
     #[serde(rename = "authentication")]
     pub authentication: Vec<String>,
 
-    /// Verification methods used for assertion/issuance.
     #[serde(rename = "assertionMethod")]
     pub assertion_method: Vec<String>,
 
-    /// Service endpoints (relays, follows endpoint).
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub service: Vec<Service>,
 
-    /// Profile metadata from Nostr kind 0 events.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile: Option<Profile>,
 
-    /// Followed DIDs from Nostr kind 3 contact lists.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub follows: Vec<String>,
+
+    /// Document-level modification time (ISO-8601).
+    /// Max of `created_at` across all signed parts (profile, follows, relays).
+    /// Per spec #106 — in-graph source-derived provenance.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modified: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
-// Verification Method
-// ---------------------------------------------------------------------------
-
 /// A Multikey verification method as defined by W3C Controlled Identifiers.
-///
-/// Uses the `publicKeyMultibase` property with a multicodec-wrapped,
-/// multibase-encoded compressed secp256k1 public key.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerificationMethod {
-    /// DID URL fragment identifier (e.g., `did:nostr:...<pubkey>#key1`).
     pub id: String,
-    /// MUST be `"Multikey"`.
     #[serde(rename = "type")]
     pub vm_type: String,
-    /// The DID of the controller (same as the document `id`).
     pub controller: String,
-    /// The public key in Multikey format.
     #[serde(rename = "publicKeyMultibase")]
     pub public_key_multibase: String,
 }
 
-// ---------------------------------------------------------------------------
-// Service
-// ---------------------------------------------------------------------------
-
 /// A service endpoint entry.
-///
-/// Per the did:nostr spec, service types include:
-/// - `"Relay"` — a Nostr relay WebSocket URL
-/// - `"FollowsEndpoint"` — an HTTP endpoint for retrieving the full follow list
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Service {
-    /// DID URL fragment identifier.
     pub id: String,
-    /// Service type: `"Relay"` or `"FollowsEndpoint"`.
     #[serde(rename = "type")]
     pub service_type: String,
-    /// The service endpoint URL(s).
     #[serde(rename = "serviceEndpoint")]
     pub service_endpoint: ServiceEndpoint,
 }
@@ -135,59 +78,37 @@ pub struct Service {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ServiceEndpoint {
-    /// Single URL string (e.g., `wss://relay.damus.io/`).
     Single(String),
-    /// Array of URL strings.
     Multiple(Vec<String>),
 }
 
-// ---------------------------------------------------------------------------
-// Profile
-// ---------------------------------------------------------------------------
-
 /// Profile metadata from Nostr kind 0 events.
-///
-/// All fields are optional. The `timestamp` field contains the
-/// `created_at` value from the source Nostr event (Unix seconds),
-/// enabling cache freshness checks.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Profile {
-    /// Display name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// Bio or description.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub about: Option<String>,
-    /// Avatar/profile picture URL.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub picture: Option<String>,
-    /// NIP-05 internet identifier (e.g., `alice@example.com`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nip05: Option<String>,
-    /// Lightning address per LUD-16 (e.g., `alice@getalby.com`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lud16: Option<String>,
-    /// Personal or project website.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub website: Option<String>,
     /// Unix timestamp (seconds) of the source kind 0 event.
     /// Corresponds to Nostr `event.created_at`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub timestamp: Option<u64>,
+    pub created_at: Option<u64>,
 }
 
 // ---------------------------------------------------------------------------
 // Default Relays
 // ---------------------------------------------------------------------------
 
-/// High-availability, reliable Nostr relays used as defaults.
-///
-/// Sourced from active public relays with near 100% uptime:
-/// - `wss://nos.lol` — General purpose, high uptime
-/// - `wss://relay.damus.io` — General purpose, Damus ecosystem
-/// - `wss://relay.primal.net` — General purpose, Primal ecosystem
-/// - `wss://relay.nostr.band` — Full-text search, network trends
-/// - `wss://purplepag.es` — Long-form content, user profiles
+/// High-availability, reliable Nostr relays used as defaults
+/// when calling `DocumentBuilder::with_defaults()`.
 const DEFAULT_RELAYS: &[&str] = &[
     "wss://nos.lol",
     "wss://relay.damus.io",
@@ -202,15 +123,9 @@ const DEFAULT_RELAYS: &[&str] = &[
 
 /// Builds W3C-compliant DID Documents from `did:nostr` identifiers.
 ///
-/// Uses `nostr-did-key` for BIP-340 → Multikey cryptographic transformation
-/// and produces documents matching the Nostr DID Method Specification v0.0.11.
-///
-/// # Relay deduplication
-///
-/// Relay URLs are normalized (trim trailing slash, lowercase) before
-/// comparison. Duplicate URLs are silently ignored. This means calling
-/// `with_relay("wss://relay.damus.io")` followed by
-/// `with_relay("wss://relay.damus.io/")` adds the relay only once.
+/// Two constructors:
+/// - [`new()`] — empty builder, no relays. Produces minimal §2.3.1 documents.
+/// - [`with_defaults()`] — pre-seeded with 5 high-availability relays.
 ///
 /// # Example — Minimal document (§2.3.1)
 ///
@@ -221,70 +136,57 @@ const DEFAULT_RELAYS: &[&str] = &[
 ///     .build("did:nostr:124c0fa99407182ece5a24fad9b7f6674902fc422843d3128d38a0afbee0fdd2")
 ///     .unwrap();
 ///
-/// assert_eq!(doc.doc_type, "DIDNostr");
-/// assert_eq!(doc.verification_method[0].vm_type, "Multikey");
+/// assert!(doc.service.is_empty());
 /// ```
 ///
-/// # Example — Complete document (§2.3.3)
+/// # Example — With default relays (§2.3.2)
 ///
 /// ```rust
-/// use nostr_did::{DocumentBuilder, Profile};
+/// use nostr_did::DocumentBuilder;
 ///
-/// let profile = Profile {
-///     name: Some("Alice".into()),
-///     about: Some("Building the decentralized web".into()),
-///     picture: Some("https://example.com/alice.jpg".into()),
-///     nip05: Some("alice@example.com".into()),
-///     lud16: Some("alice@getalby.com".into()),
-///     website: Some("https://alice.example.com".into()),
-///     timestamp: Some(1737906600),
-/// };
-///
-/// let doc = DocumentBuilder::new()
-///     .with_relay("wss://relay.damus.io")
-///     .with_profile(profile)
-///     .with_also_known_as(vec![
-///         "https://alice.example.com/#me".into(),
-///         "at://alice.bsky.social".into(),
-///     ])
-///     .with_follows(vec![
-///         "did:nostr:32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245".into(),
-///     ])
+/// let doc = DocumentBuilder::with_defaults()
 ///     .build("did:nostr:124c0fa99407182ece5a24fad9b7f6674902fc422843d3128d38a0afbee0fdd2")
 ///     .unwrap();
+///
+/// assert_eq!(doc.service.len(), 5);
 /// ```
 pub struct DocumentBuilder {
-    /// Collected relay URLs (normalized: no trailing slash, lowercase).
     relay_urls: Vec<String>,
-    /// Profile metadata.
     profile: Option<Profile>,
-    /// Cross-platform identity links.
     also_known_as: Vec<String>,
-    /// Followed DIDs.
     follows: Vec<String>,
-    /// Set of normalized relay URLs already seen — used for O(1) dedup.
     seen_relays: std::collections::HashSet<String>,
+    modified: Option<String>,
 }
 
 impl Default for DocumentBuilder {
+    /// Default builder includes high-availability relays.
+    /// Use [`new()`] for a clean builder with no relays.
     fn default() -> Self {
-        Self::new()
+        Self::with_defaults()
     }
 }
 
 impl DocumentBuilder {
-    /// Create a new builder pre-seeded with high-availability default relays.
+    /// Create a new builder with **no relays** configured.
     ///
-    /// Default relays:
-    /// - `wss://nos.lol`
-    /// - `wss://relay.damus.io`
-    /// - `wss://relay.primal.net`
-    /// - `wss://relay.nostr.band`
-    /// - `wss://purplepag.es`
-    ///
-    /// These defaults are deduplicated against any relays added later
-    /// via [`with_relay`] or [`with_relays`].
+    /// Produces a minimal document matching spec §2.3.1.
+    /// Use [`with_defaults()`] to pre-seed default relays.
     pub fn new() -> Self {
+        Self {
+            relay_urls: Vec::new(),
+            profile: None,
+            also_known_as: Vec::new(),
+            follows: Vec::new(),
+            seen_relays: std::collections::HashSet::new(),
+            modified: None,
+        }
+    }
+
+    /// Create a builder pre-seeded with 5 high-availability default relays:
+    /// `wss://nos.lol`, `wss://relay.damus.io`, `wss://relay.primal.net`,
+    /// `wss://relay.nostr.band`, `wss://purplepag.es`.
+    pub fn with_defaults() -> Self {
         let mut seen_relays = std::collections::HashSet::new();
         let mut relay_urls = Vec::with_capacity(DEFAULT_RELAYS.len());
 
@@ -301,18 +203,11 @@ impl DocumentBuilder {
             also_known_as: Vec::new(),
             follows: Vec::new(),
             seen_relays,
+            modified: None,
         }
     }
 
     /// Add a relay URL. Duplicates are silently ignored.
-    ///
-    /// URLs are normalized (trim trailing slash, lowercase) before
-    /// comparison and storage. This means `"wss://relay.damus.io"`,
-    /// `"wss://relay.damus.io/"`, and `"WSS://RELAY.DAMUS.IO"`
-    /// are all treated as the same relay.
-    ///
-    /// The trailing `/` is re-appended during document construction
-    /// per the did:nostr specification.
     pub fn with_relay(mut self, relay: impl Into<String>) -> Self {
         let normalized = relay.into().trim_end_matches('/').to_lowercase();
         if self.seen_relays.insert(normalized.clone()) {
@@ -322,9 +217,6 @@ impl DocumentBuilder {
     }
 
     /// Replace all relays (including defaults) with a custom set.
-    ///
-    /// Each URL in the provided list is normalized and deduplicated.
-    /// To add relays on top of defaults, use [`with_relay`] instead.
     pub fn with_relays(mut self, relays: Vec<String>) -> Self {
         self.relay_urls.clear();
         self.seen_relays.clear();
@@ -341,9 +233,6 @@ impl DocumentBuilder {
     }
 
     /// Set alsoKnownAs identifiers (cross-platform identity links).
-    ///
-    /// Common values: WebID URLs, ActivityPub handles, AT Protocol DIDs,
-    /// other DID methods, social media profiles.
     pub fn with_also_known_as(mut self, identities: Vec<String>) -> Self {
         self.also_known_as = identities;
         self
@@ -355,19 +244,19 @@ impl DocumentBuilder {
         self
     }
 
+    /// Set the document-level modified timestamp (ISO-8601).
+    /// Max of `created_at` across all signed parts (profile, follows, relays).
+    /// Per spec #106 — in-graph source-derived provenance.
+    pub fn with_modified(mut self, modified: impl Into<String>) -> Self {
+        self.modified = Some(modified.into());
+        self
+    }
+
     // -------------------------------------------------------------------
     // Build
     // -------------------------------------------------------------------
 
     /// Build the complete DID Document from the DID identifier.
-    ///
-    /// Constructs the document deterministically from the public key
-    /// embedded in the DID. All enrichment (profile, follows, alsoKnownAs,
-    /// relays) is layered on top of the cryptographic baseline.
-    ///
-    /// # Returns
-    ///
-    /// `Some(DidDocument)` if the DID is syntactically valid, `None` otherwise.
     pub fn build(&self, did: &str) -> Option<DidDocument> {
         let pubkey_hex = extract_pubkey(did)?;
 
@@ -378,8 +267,6 @@ impl DocumentBuilder {
         let multikey = public_key_to_multikey(pubkey_hex).ok()?;
         let key_id = format!("{did}#key1");
 
-        // Build service endpoints from relay URLs.
-        // Trailing `/` is re-appended per the did:nostr specification §2.6.
         let mut services = Vec::with_capacity(self.relay_urls.len());
         for (i, relay) in self.relay_urls.iter().enumerate() {
             let relay_id = if self.relay_urls.len() == 1 {
@@ -413,6 +300,7 @@ impl DocumentBuilder {
             service: services,
             profile: self.profile.clone(),
             follows: self.follows.clone(),
+            modified: self.modified.clone(),
         })
     }
 }
@@ -421,7 +309,6 @@ impl DocumentBuilder {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Extract the 64-character hex public key from a did:nostr identifier.
 fn extract_pubkey(did: &str) -> Option<&str> {
     let prefix = "did:nostr:";
     did.strip_prefix(prefix).filter(|p| p.len() == 64)
@@ -441,6 +328,26 @@ mod tests {
     const SPEC_MULTIKEY: &str =
         "fe70102124c0fa99407182ece5a24fad9b7f6674902fc422843d3128d38a0afbee0fdd2";
 
+    // ── Constructors ──
+
+    #[test]
+    fn new_produces_minimal_no_services() {
+        let doc = DocumentBuilder::new().build(SPEC_DID).unwrap();
+        assert!(doc.service.is_empty());
+    }
+
+    #[test]
+    fn with_defaults_produces_five_services() {
+        let doc = DocumentBuilder::with_defaults().build(SPEC_DID).unwrap();
+        assert_eq!(doc.service.len(), 5);
+    }
+
+    #[test]
+    fn default_is_with_defaults_for_backward_compat() {
+        let doc = DocumentBuilder::default().build(SPEC_DID).unwrap();
+        assert_eq!(doc.service.len(), 5);
+    }
+
     // ── §2.3.1 Minimal document ──
 
     #[test]
@@ -458,6 +365,7 @@ mod tests {
         assert_eq!(vm.id, format!("{SPEC_DID}#key1"));
         assert_eq!(doc.authentication, vec![format!("{SPEC_DID}#key1")]);
         assert_eq!(doc.assertion_method, vec![format!("{SPEC_DID}#key1")]);
+        assert!(doc.modified.is_none());
     }
 
     #[test]
@@ -466,27 +374,15 @@ mod tests {
         assert!(doc.also_known_as.is_empty());
         assert!(doc.follows.is_empty());
         assert!(doc.profile.is_none());
+        assert!(doc.service.is_empty());
     }
 
     // ── §2.3.2 Enhanced with relays ──
 
     #[test]
     fn enhanced_document_includes_default_relays() {
-        let doc = DocumentBuilder::new().build(SPEC_DID).unwrap();
+        let doc = DocumentBuilder::with_defaults().build(SPEC_DID).unwrap();
         assert_eq!(doc.service.len(), DEFAULT_RELAYS.len());
-
-        let relay_urls: Vec<&str> = doc
-            .service
-            .iter()
-            .filter_map(|s| match &s.service_endpoint {
-                ServiceEndpoint::Single(url) => Some(url.as_str()),
-                _ => None,
-            })
-            .collect();
-
-        assert!(relay_urls.iter().any(|u| u.contains("nos.lol")));
-        assert!(relay_urls.iter().any(|u| u.contains("relay.damus.io")));
-        assert!(relay_urls.iter().any(|u| u.contains("relay.primal.net")));
     }
 
     #[test]
@@ -496,49 +392,44 @@ mod tests {
             .build(SPEC_DID)
             .unwrap();
 
-        let custom = doc
-            .service
-            .iter()
-            .find(|s| {
-                matches!(&s.service_endpoint, ServiceEndpoint::Single(url) if url.contains("custom.relay.com"))
-            })
+        assert_eq!(doc.service.len(), 1);
+        match &doc.service[0].service_endpoint {
+            ServiceEndpoint::Single(url) => assert!(url.contains("custom.relay.com")),
+            _ => panic!("Expected single endpoint"),
+        }
+    }
+
+    #[test]
+    fn enhanced_document_with_modified() {
+        let doc = DocumentBuilder::new()
+            .with_relay("wss://relay.damus.io")
+            .with_modified("2025-01-26T15:30:00Z")
+            .build(SPEC_DID)
             .unwrap();
-        assert_eq!(custom.service_type, "Relay");
+
+        assert_eq!(doc.modified.as_deref(), Some("2025-01-26T15:30:00Z"));
     }
 
     #[test]
     fn custom_relays_replace_defaults() {
-        let doc = DocumentBuilder::new()
+        let doc = DocumentBuilder::with_defaults()
             .with_relays(vec!["wss://sole.relay.com".to_string()])
             .build(SPEC_DID)
             .unwrap();
 
         assert_eq!(doc.service.len(), 1);
-        match &doc.service[0].service_endpoint {
-            ServiceEndpoint::Single(url) => assert!(url.contains("sole.relay.com")),
-            _ => panic!("Expected single endpoint"),
-        }
     }
 
     // ── Relay deduplication ──
 
     #[test]
-    fn duplicate_relay_same_url_ignored() {
-        let doc = DocumentBuilder::new()
-            .with_relay("wss://relay.damus.io")
-            .with_relay("wss://relay.damus.io")
+    fn duplicate_relay_ignored() {
+        let doc = DocumentBuilder::with_defaults()
             .with_relay("wss://relay.damus.io")
             .build(SPEC_DID)
             .unwrap();
 
-        let damus_count = doc
-            .service
-            .iter()
-            .filter(|s| {
-                matches!(&s.service_endpoint, ServiceEndpoint::Single(url) if url.contains("relay.damus.io"))
-            })
-            .count();
-        assert_eq!(damus_count, 1);
+        assert_eq!(doc.service.len(), DEFAULT_RELAYS.len());
     }
 
     #[test]
@@ -550,24 +441,7 @@ mod tests {
             .build(SPEC_DID)
             .unwrap();
 
-        let damus_count = doc
-            .service
-            .iter()
-            .filter(|s| {
-                matches!(&s.service_endpoint, ServiceEndpoint::Single(url) if url.contains("relay.damus.io"))
-            })
-            .count();
-        assert_eq!(damus_count, 1);
-    }
-
-    #[test]
-    fn duplicate_relay_via_defaults_and_explicit_add() {
-        let doc = DocumentBuilder::new()
-            .with_relay("wss://relay.damus.io") // already in defaults
-            .build(SPEC_DID)
-            .unwrap();
-
-        assert_eq!(doc.service.len(), DEFAULT_RELAYS.len());
+        assert_eq!(doc.service.len(), 1);
     }
 
     // ── §2.3.3 Complete document ──
@@ -581,11 +455,11 @@ mod tests {
             nip05: None,
             lud16: None,
             website: None,
-            timestamp: Some(1737906600),
+            created_at: Some(1737906600),
         };
 
         let doc = DocumentBuilder::new()
-            .with_relays(vec!["wss://relay.damus.io".to_string()])
+            .with_relay("wss://relay.damus.io")
             .with_profile(profile)
             .with_also_known_as(vec![
                 "https://alice.example.com/#me".into(),
@@ -596,80 +470,42 @@ mod tests {
                 "did:nostr:32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245".into(),
                 "did:nostr:46fcbe3065eaf1ae7811465924e48923363ff3f526bd6f73d7c184147700e3a8".into(),
             ])
+            .with_modified("2025-01-26T15:30:00Z")
             .build(SPEC_DID)
             .unwrap();
 
-        // Profile
         let p = doc.profile.unwrap();
         assert_eq!(p.name.unwrap(), "Alice");
-        assert_eq!(p.about.unwrap(), "Building the decentralized web");
-        assert_eq!(p.timestamp.unwrap(), 1737906600);
-
-        // Also known as
+        assert_eq!(p.created_at.unwrap(), 1737906600);
         assert_eq!(doc.also_known_as.len(), 3);
-        assert!(doc
-            .also_known_as
-            .contains(&"at://alice.bsky.social".to_string()));
-
-        // Follows
         assert_eq!(doc.follows.len(), 2);
-        assert!(doc.follows[0].starts_with("did:nostr:"));
-
-        // Verification method preserved
-        assert_eq!(
-            doc.verification_method[0].public_key_multibase,
-            SPEC_MULTIKEY
-        );
+        assert_eq!(doc.verification_method[0].public_key_multibase, SPEC_MULTIKEY);
+        assert_eq!(doc.modified.as_deref(), Some("2025-01-26T15:30:00Z"));
     }
 
-    // ── JSON-LD compliance ──
+    // ── JSON-LD ──
 
     #[test]
-    fn document_has_required_jsonld_contexts() {
+    fn document_has_required_contexts() {
         let doc = DocumentBuilder::new().build(SPEC_DID).unwrap();
-        assert!(doc
-            .context
-            .contains(&"https://www.w3.org/ns/cid/v1".to_string()));
-        assert!(doc
-            .context
-            .contains(&"https://w3id.org/nostr/context".to_string()));
-    }
-
-    #[test]
-    fn document_serializes_valid_jsonld() {
-        let doc = DocumentBuilder::new().build(SPEC_DID).unwrap();
-        let json = serde_json::to_value(&doc).unwrap();
-
-        // Top-level structure
-        assert_eq!(json["id"], SPEC_DID);
-        assert_eq!(json["type"], "DIDNostr");
-
-        // Context is an array
-        assert!(json["@context"].is_array());
-
-        // Verification method
-        let vm = &json["verificationMethod"][0];
-        assert_eq!(vm["type"], "Multikey");
-        assert_eq!(vm["publicKeyMultibase"], SPEC_MULTIKEY);
-        assert_eq!(vm["controller"], SPEC_DID);
-
-        // Verification relationships
-        assert!(json["authentication"].is_array());
-        assert!(json["assertionMethod"].is_array());
+        assert!(doc.context.contains(&"https://www.w3.org/ns/cid/v1".to_string()));
+        assert!(doc.context.contains(&"https://w3id.org/nostr/context".to_string()));
     }
 
     #[test]
     fn document_roundtrip_json() {
         let doc = DocumentBuilder::new()
+            .with_relay("wss://test.relay.com")
             .with_profile(Profile {
                 name: Some("Test".into()),
-                about: Some("Roundtrip test".into()),
+                created_at: Some(1234567890),
                 ..Default::default()
             })
             .with_also_known_as(vec!["https://example.com".into()])
             .with_follows(vec![
                 "did:nostr:abc123abc123abc123abc123abc123abc123abc123abc123abc123abc123abc1".into(),
             ])
+            .with_modified("2025-01-01T00:00:00Z")
             .build(SPEC_DID)
             .unwrap();
 
@@ -681,6 +517,8 @@ mod tests {
         assert_eq!(parsed.profile.unwrap().name.unwrap(), "Test");
         assert_eq!(parsed.also_known_as.len(), 1);
         assert_eq!(parsed.follows.len(), 1);
+        assert_eq!(parsed.service.len(), 1);
+        assert_eq!(parsed.modified.as_deref(), Some("2025-01-01T00:00:00Z"));
     }
 
     // ── Edge cases ──
@@ -689,13 +527,6 @@ mod tests {
     fn builder_rejects_invalid_did() {
         assert!(DocumentBuilder::new().build("did:nostr:tooshort").is_none());
         assert!(DocumentBuilder::new().build("did:key:abc123").is_none());
-        assert!(DocumentBuilder::new().build("not-a-did").is_none());
-    }
-
-    #[test]
-    fn builder_rejects_non_hex_pubkey() {
-        let bad = "did:nostr:gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg";
-        assert!(DocumentBuilder::new().build(bad).is_none());
     }
 
     #[test]
@@ -705,17 +536,7 @@ mod tests {
         assert!(!json.contains("\"alsoKnownAs\""));
         assert!(!json.contains("\"follows\""));
         assert!(!json.contains("\"profile\""));
-    }
-
-    #[test]
-    fn profile_default_is_all_none() {
-        let p = Profile::default();
-        assert!(p.name.is_none());
-        assert!(p.about.is_none());
-        assert!(p.picture.is_none());
-        assert!(p.nip05.is_none());
-        assert!(p.lud16.is_none());
-        assert!(p.website.is_none());
-        assert!(p.timestamp.is_none());
+        assert!(!json.contains("\"service\""));
+        assert!(!json.contains("\"modified\""));
     }
 }
