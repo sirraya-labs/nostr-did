@@ -5,7 +5,7 @@ fn main() {
 
     println!("═══════════════════════════════════════════════════════════");
     println!("  nostr-did — W3C DID Document Generator");
-    println!("  Spec: Nostr DID Method v0.0.11");
+    println!("  Spec: Nostr DID Method v0.0.12");
     println!("═══════════════════════════════════════════════════════════\n");
 
     // ── §2.3.1 Minimal ──
@@ -16,7 +16,7 @@ fn main() {
     // ── §2.3.2 Enhanced with relays ──
     println!("\n─── §2.3.2 Enhanced DID Document (With Real Relays) ───\n");
     println!("Relays: wss://nos.lol, wss://relay.damus.io, wss://relay.primal.net, wss://relay.nostr.band, wss://purplepag.es\n");
-    let doc = DocumentBuilder::new().build(did).unwrap();
+    let doc = DocumentBuilder::with_defaults().build(did).unwrap();
     println!("{}", serde_json::to_string_pretty(&doc).unwrap());
 
     // ── §2.3.3 Complete ──
@@ -28,7 +28,7 @@ fn main() {
         nip05: Some("alice@example.com".into()),
         lud16: Some("alice@getalby.com".into()),
         website: Some("https://alice.example.com".into()),
-        timestamp: Some(1737906600),
+        created_at: Some(1737906600),
     };
 
     let doc = DocumentBuilder::new()

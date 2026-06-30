@@ -290,13 +290,16 @@ impl DocumentBuilder {
             doc_type: "DIDNostr".to_string(),
             also_known_as: self.also_known_as.clone(),
             verification_method: vec![VerificationMethod {
-                id: key_id.clone(),
+                id: key_id,
                 vm_type: "Multikey".to_string(),
                 controller: did.to_string(),
                 public_key_multibase: multikey,
             }],
-            authentication: vec![key_id.clone()],
-            assertion_method: vec![key_id],
+            // Verification relationship references use relative DID URLs
+            // per the spec examples and Beacon resolver convention.
+            // The verification method's own id and controller remain absolute.
+            authentication: vec!["#key1".to_string()],
+            assertion_method: vec!["#key1".to_string()],
             service: services,
             profile: self.profile.clone(),
             follows: self.follows.clone(),
@@ -348,6 +351,23 @@ mod tests {
         assert_eq!(doc.service.len(), 5);
     }
 
+    // ── Verification relationship references are relative ──
+
+    #[test]
+    fn verification_relationships_use_relative_refs() {
+        let doc = DocumentBuilder::new().build(SPEC_DID).unwrap();
+        assert_eq!(doc.authentication, vec!["#key1"]);
+        assert_eq!(doc.assertion_method, vec!["#key1"]);
+    }
+
+    #[test]
+    fn verification_method_id_is_absolute() {
+        let doc = DocumentBuilder::new().build(SPEC_DID).unwrap();
+        let vm = &doc.verification_method[0];
+        assert_eq!(vm.id, format!("{SPEC_DID}#key1"));
+        assert_eq!(vm.controller, SPEC_DID);
+    }
+
     // ── §2.3.1 Minimal document ──
 
     #[test]
@@ -363,8 +383,8 @@ mod tests {
         assert_eq!(vm.controller, SPEC_DID);
         assert_eq!(vm.public_key_multibase, SPEC_MULTIKEY);
         assert_eq!(vm.id, format!("{SPEC_DID}#key1"));
-        assert_eq!(doc.authentication, vec![format!("{SPEC_DID}#key1")]);
-        assert_eq!(doc.assertion_method, vec![format!("{SPEC_DID}#key1")]);
+        assert_eq!(doc.authentication, vec!["#key1"]);
+        assert_eq!(doc.assertion_method, vec!["#key1"]);
         assert!(doc.modified.is_none());
     }
 
